@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'taggit',
     'django_filters',
     'drf_yasg',
+    'query_doctor',
     # local Apps,
     'accounts',
     'articles',
@@ -59,6 +60,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+    'query_doctor.middleware.QueryDoctorMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -88,11 +91,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
-        'USER': 'postgres',
+        'NAME': 'query_check',
+        'USER': 'query_check',
         'PASSWORD': '0000',
-        'HOST': 'db',
-        'PORT': '5432'
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 
@@ -161,5 +164,40 @@ SIMPLE_JWT = {
 STORAGES = {
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
+
+QUERY_DOCTOR = {
+    'ENABLED': True,
+    'SAMPLE_RATE': 1.0,
+    'CAPTURE_STACK_TRACES': True,
+    'ANALYZERS': {
+        'nplusone': {'enabled': True, 'threshold': 3},
+        'duplicate': {'enabled': True, 'threshold': 2},
+        'missing_index': {'enabled': False},
+        'fat_select': {'enabled': False},
+        'queryset_eval': {'enabled': False},
+        'complexity': {'enabled': True, 'threshold': 8},
+        'serializer_method': {'enabled': True},
+    },
+    'REPORTERS': ['log'],
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'query_doctor_file': {
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'query_doctor.log',
+            'mode': 'w',
+        },
+    },
+    'loggers': {
+        'query_doctor': {
+            'handlers': ['query_doctor_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }

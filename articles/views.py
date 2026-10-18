@@ -11,7 +11,9 @@ from articles.filters import ArticleFilter
 
 
 class ArticleView(viewsets.ModelViewSet):
-    queryset = Article.objects.select_related('author')
+    # Demo regression: dropped select_related('author') to show query-doctor
+    # catching a reintroduced duplicate-query finding on this PR.
+    queryset = Article.objects.all()
     serializer_class = ArticleSerializer 
     permission_classes=[IsAuthenticated]
     lookup_field='slug'

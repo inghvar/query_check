@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-"""Diff-scoped GitHub Actions annotations from a django-query-doctor log.
+"""GitHub Actions annotations from a django-query-doctor log (baseline mode).
 
 Parses the plain-text report produced by query_doctor's "log" reporter
-(see LogReporter._log_prescription), keeps only the findings whose
-callsite falls on a line actually changed in this PR, and prints them as
-native GitHub Actions annotations (::error / ::warning) so they show up
-inline in the PR's "Files changed" tab.
+(see LogReporter._log_prescription) and prints every finding as a native
+GitHub Actions annotation (::error / ::warning) so it shows up inline in
+the PR's "Files changed" tab.
+
+This relies on a *clean baseline*: the repository is kept at zero
+query_doctor findings on its default branch (fix real issues, add known
+third-party-library limitations to .queryignore). Under that invariant,
+any finding present in a push's query_doctor.log is new by definition --
+introduced by that push's own code -- so no git-diff/line-matching is
+needed at all to tell "pre-existing" apart from "new".
 
 Usage:
     python scripts/query_doctor_annotate.py \
         --log query_doctor.log \
-        --base-sha <base_sha> \
-        --head-sha <head_sha> \
-        [--fail-on warning]   # warning (default) or critical
+        [--fail-on warning]   # info, warning (default), or critical
 
-Exit code is 1 if any matching finding is found at or above --fail-on
-severity, 0 otherwise (including when nothing matches or the log is
-missing/empty).
+Exit code is 1 if any finding is found at or above --fail-on severity,
+0 otherwise (including when the log is empty/missing).
 """
 
 from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 
@@ -79,52 +81,6 @@ def parse_log(path: str) -> list[Finding]:
     return findings
 
 
-def get_changed_lines(base_sha: str, head_sha: str) -> dict[str, set[int]]:
-    """Return {repo-relative file path: {changed line numbers in new file}}.
-
-    Uses `git diff --unified=0` and parses the `@@ -a,b +c,d @@` hunk
-    headers, same mechanism git itself uses, so added/modified lines are
-    reported with their exact new-file line numbers (not just "file touched").
-    """
-    result = subprocess.run(
-        ["git", "diff", "--unified=0", f"{base_sha}", f"{head_sha}"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    changed: dict[str, set[int]] = {}
-    current_file: str | None = None
-    hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
-    file_re = re.compile(r"^\+\+\+ b/(.+)$")
-
-    for line in result.stdout.splitlines():
-        file_match = file_re.match(line)
-        if file_match:
-            current_file = file_match.group(1)
-            changed.setdefault(current_file, set())
-            continue
-
-        hunk_match = hunk_re.match(line)
-        if hunk_match and current_file is not None:
-            start = int(hunk_match.group(1))
-            count = int(hunk_match.group(2)) if hunk_match.group(2) is not None else 1
-            if count == 0:
-                # Pure deletion hunk; nothing added on the new-file side.
-                continue
-            changed[current_file].update(range(start, start + count))
-
-    return changed
-
-
-def matches_changed_lines(finding: Finding, changed: dict[str, set[int]]) -> bool:
-    for changed_file, line_numbers in changed.items():
-        if finding.file.endswith(changed_file) or changed_file.endswith(finding.file):
-            if finding.line in line_numbers:
-                return True
-    return False
-
-
 def emit_annotation(finding: Finding) -> None:
     level = _ANNOTATION_LEVEL.get(finding.severity, "warning")
     message = f"{finding.description} | Fix: {finding.fix}".replace("\n", " ")
@@ -134,28 +90,23 @@ def emit_annotation(finding: Finding) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", default="query_doctor.log")
-    parser.add_argument("--base-sha", required=True)
-    parser.add_argument("--head-sha", required=True)
     parser.add_argument("--fail-on", default="warning", choices=["info", "warning", "critical"])
     args = parser.parse_args()
 
     findings = parse_log(args.log)
-    changed = get_changed_lines(args.base_sha, args.head_sha)
 
-    matched = [f for f in findings if matches_changed_lines(f, changed)]
-
-    if not matched:
-        print("Query Doctor: no findings on changed lines of this PR.")
+    if not findings:
+        print("Query Doctor: baseline is clean, no findings.")
         return 0
 
     fail_threshold = _SEVERITY_ORDER[args.fail_on]
     should_fail = False
-    for finding in matched:
+    for finding in findings:
         emit_annotation(finding)
         if _SEVERITY_ORDER[finding.severity] >= fail_threshold:
             should_fail = True
 
-    print(f"Query Doctor: {len(matched)} finding(s) on changed lines of this PR.")
+    print(f"Query Doctor: {len(findings)} finding(s) -- baseline is supposed to be clean, these are new.")
     return 1 if should_fail else 0
 
 

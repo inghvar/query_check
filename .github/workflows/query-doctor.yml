@@ -1,0 +1,42 @@
+name: Query Doctor
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  query-doctor:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: query_check
+          POSTGRES_PASSWORD: "0000"
+          POSTGRES_DB: query_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite (generates query_doctor.log)
+        run: python manage.py test
+
+      - name: Annotate query-doctor findings
+        if: always()
+        run: python scripts/query_doctor_annotate.py --fail-on warning

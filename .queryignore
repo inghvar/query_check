@@ -1,0 +1,9 @@
+# django-query-doctor ignore rules.
+#
+# taggit's TaggableManager.add() issues one INSERT per tag via an internal
+# get_or_create() loop on the through model (TaggedItem). This happens inside
+# the third-party django-taggit library, not in our code, and cannot be
+# bulk-ified without bypassing taggit's public API -- doing so would lose
+# the m2m_changed signals and TAGGIT_CASE_INSENSITIVE handling it provides.
+# Accepted as a known limitation rather than worked around.
+ignore:write_n_plus_one:articles/serializers.py

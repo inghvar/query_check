@@ -11,7 +11,7 @@ from articles.filters import ArticleFilter
 
 
 class ArticleView(viewsets.ModelViewSet):
-    queryset = Article.objects.all()
+    queryset = Article.objects.select_related('author')
     serializer_class = ArticleSerializer 
     permission_classes=[IsAuthenticated]
     lookup_field='slug'
@@ -47,7 +47,7 @@ class ArticleView(viewsets.ModelViewSet):
     def favorite(self, request, slug, *args, **kwargs):
         if request.method == 'POST':
             try:
-                article = Article.objects.get(slug=slug)
+                article = self.get_queryset().get(slug=slug)
                 
                 
                 if article.favorites.filter(id=request.user.id).exists():
@@ -70,7 +70,7 @@ class ArticleView(viewsets.ModelViewSet):
         else:
             try:
                 
-                article = Article.objects.get(slug=slug)
+                article = self.get_queryset().get(slug=slug)
                 if article.favorites.get(id=request.user.id):
                     article.favorites.remove(request.user.id)
                     serializer = self.get_serializer(article)

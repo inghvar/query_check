@@ -25,6 +25,7 @@ Exit code is 1 if any finding is found at or above --fail-on severity,
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -81,10 +82,33 @@ def parse_log(path: str) -> list[Finding]:
     return findings
 
 
+def to_repo_relative(path: str) -> str:
+    """Best-effort conversion of an absolute callsite path to a repo-relative one.
+
+    query_doctor logs the absolute filesystem path of the callsite. GitHub's
+    annotation `file=` field resolves an absolute path under GITHUB_WORKSPACE
+    on its own, but the *message text* does not get that treatment, so we
+    convert it ourselves to keep the location readable wherever the message
+    is displayed (raw job log, PR comment, etc.), not only in the "Files
+    changed" tab.
+    """
+    cwd = os.getcwd()
+    if path.startswith(cwd + os.sep):
+        return path[len(cwd) + 1:]
+    return path
+
+
 def emit_annotation(finding: Finding) -> None:
     level = _ANNOTATION_LEVEL.get(finding.severity, "warning")
-    message = f"{finding.description} | Fix: {finding.fix}".replace("\n", " ")
-    print(f"::{level} file={finding.file},line={finding.line}::{message}")
+    rel_file = to_repo_relative(finding.file)
+    # Location is embedded directly in the message text (not just in the
+    # file=/line= annotation metadata) so it is visible in every GitHub
+    # surface that renders this text, including the raw job log.
+    message = (
+        f"{rel_file}:{finding.line} in {finding.function}() -- "
+        f"{finding.description} | Fix: {finding.fix}"
+    ).replace("\n", " ")
+    print(f"::{level} file={rel_file},line={finding.line}::{message}")
 
 
 def main() -> int:

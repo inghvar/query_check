@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - .github/workflows/copilot-code-review.yml
+      - .github/workflows/copilot-setup-steps.yml
 
 jobs:
   # The job MUST be called `copilot-setup-steps` or Copilot will not pick it up.

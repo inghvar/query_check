@@ -3,7 +3,7 @@ your review, read the file `query_doctor.log` at the repository
 root of your current working directory.
 
 This file is placed there automatically by the
-`.github/workflows/copilot-code-review.yml` setup steps, which run
+`.github/workflows/copilot-setup-steps.yml` setup steps, which run
 before you start reviewing: they look up the most recent completed
 "Query Doctor" GitHub Actions run for this exact commit, download its
 `query-doctor-log` artifact, and unzip it into the workspace. It is

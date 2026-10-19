@@ -34,23 +34,49 @@ jobs:
           SHA="$(git rev-parse HEAD)"
           echo "Looking up Query Doctor run for commit $SHA"
 
-          RUN_ID="$(gh api "repos/$REPO/actions/workflows/query-doctor.yml/runs?head_sha=$SHA&status=completed" \
-            --jq '.workflow_runs[0].id // empty')"
+          # Query Doctor runs as its own workflow and may still be in
+          # progress when this job starts. Poll with a bounded timeout
+          # instead of checking once, so a slow producer isn't missed.
+          MAX_WAIT_SECONDS=480
+          POLL_INTERVAL_SECONDS=15
+          ELAPSED=0
+          RUN_ID=""
+
+          while [ "$ELAPSED" -lt "$MAX_WAIT_SECONDS" ]; do
+            RUN_ID="$(gh api "repos/$REPO/actions/workflows/query-doctor.yml/runs?head_sha=$SHA&status=completed" \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -n "$RUN_ID" ]; then
+              echo "Found completed Query Doctor run: $RUN_ID (after ${ELAPSED}s)"
+              break
+            fi
+            echo "No completed Query Doctor run for $SHA yet (${ELAPSED}s elapsed); waiting ${POLL_INTERVAL_SECONDS}s..."
+            sleep "$POLL_INTERVAL_SECONDS"
+            ELAPSED=$((ELAPSED + POLL_INTERVAL_SECONDS))
+          done
 
           if [ -z "$RUN_ID" ]; then
-            echo "No completed Query Doctor run found for $SHA; skipping artifact fetch."
+            echo "::warning::Timed out after ${MAX_WAIT_SECONDS}s waiting for a completed Query Doctor run for $SHA. query_doctor.log will NOT be available for this review."
             exit 0
           fi
-          echo "Found Query Doctor run: $RUN_ID"
 
-          ARTIFACT_ID="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-            --jq '.artifacts[] | select(.name=="query-doctor-log" and .expired==false) | .id' | head -n1)"
+          ARTIFACT_ID=""
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$MAX_WAIT_SECONDS" ]; do
+            ARTIFACT_ID="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+              --jq '.artifacts[] | select(.name=="query-doctor-log" and .expired==false) | .id' | head -n1)"
+            if [ -n "$ARTIFACT_ID" ]; then
+              echo "Found artifact: $ARTIFACT_ID (after ${ELAPSED}s)"
+              break
+            fi
+            echo "Run $RUN_ID completed but no query-doctor-log artifact yet (${ELAPSED}s elapsed); waiting ${POLL_INTERVAL_SECONDS}s..."
+            sleep "$POLL_INTERVAL_SECONDS"
+            ELAPSED=$((ELAPSED + POLL_INTERVAL_SECONDS))
+          done
 
           if [ -z "$ARTIFACT_ID" ]; then
-            echo "No non-expired query-doctor-log artifact found for run $RUN_ID; skipping."
+            echo "::warning::Timed out after ${MAX_WAIT_SECONDS}s waiting for the query-doctor-log artifact on run $RUN_ID. query_doctor.log will NOT be available for this review."
             exit 0
           fi
-          echo "Found artifact: $ARTIFACT_ID"
 
           gh api "repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" > query-doctor-log.zip
           unzip -o query-doctor-log.zip -d .

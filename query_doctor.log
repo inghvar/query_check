@@ -1,2 +1,2 @@
-[CRITICAL] N+1 detected: articles/views.py:16 in ArticleViewSet.get_queryset — 42 duplicate queries to accounts_user via Article.author. Missing select_related('author').
+[CRITICAL] N+1 detected: articles/views.py:14 in ArticleViewSet.queryset — 42 duplicate queries to accounts_user via Article.author. Missing select_related('author').
 [WARNING] Duplicate query: articles/serializers.py:47 in ArticleSerializer.get_author — 2 identical queries for table accounts_user.

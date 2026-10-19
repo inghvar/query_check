@@ -1,0 +1,10 @@
+Query Doctor: 7 queries, 2.6ms, 1 issues
+[WARNING] Duplicate query: 2 identical queries for table "accounts_user" at /home/ihar/check_query/query_check/articles/tests.py:91 in test_delete_article | Fix: Assign the queryset result to a variable and reuse it instead of executing the same query multiple times
+Query Doctor: 9 queries, 5.2ms, 1 issues
+[WARNING] Duplicate query: 2 identical queries for table "accounts_user" at /home/ihar/check_query/query_check/articles/tests.py:98 in test_favorite_article | Fix: Assign the queryset result to a variable and reuse it instead of executing the same query multiple times
+Query Doctor: 7 queries, 3.1ms, 1 issues
+[WARNING] Duplicate query: 2 identical queries for table "accounts_user" at /home/ihar/check_query/query_check/articles/tests.py:62 in test_get_article | Fix: Assign the queryset result to a variable and reuse it instead of executing the same query multiple times
+Query Doctor: 9 queries, 3.4ms, 1 issues
+[WARNING] Duplicate query: 2 identical queries for table "accounts_user" at /home/ihar/check_query/query_check/articles/tests.py:105 in test_unfavorite_article | Fix: Assign the queryset result to a variable and reuse it instead of executing the same query multiple times
+Query Doctor: 22 queries, 7.0ms, 1 issues
+[WARNING] Duplicate query: 2 identical queries for table "accounts_user" at /home/ihar/check_query/query_check/articles/tests.py:82 in test_update_article | Fix: Assign the queryset result to a variable and reuse it instead of executing the same query multiple times

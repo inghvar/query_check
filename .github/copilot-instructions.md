@@ -1,7 +1,7 @@
 When performing a code review, apply the checks in the
-`.github/query-doctor-findings.md` file: it lists exact DB-query
-findings from `django-query-doctor` for this PR's head commit. Treat
-every numbered finding in that file as a required, distinct review
-comment on its given file/line — leave one review comment per
-numbered finding, even if several findings share the same root cause.
-Do not merge or skip any of them.
+`.github/query-doctor-findings.log` file: it is the raw, unedited
+output of `django-query-doctor` for this PR's head commit. Each
+`[WARNING]`/`[CRITICAL]` line is a required, distinct finding —
+leave one review comment per such line, at the file/line it names,
+even if several lines share the same root cause. Do not merge,
+paraphrase away, or skip any of them.

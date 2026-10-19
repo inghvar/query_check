@@ -1,0 +1,60 @@
+name: "Copilot Code Review Setup Steps"
+
+# This file only configures Copilot code review's own ephemeral environment.
+# It is NOT triggered automatically for real reviews; the `on:` block below
+# only exists so the job can be run/validated manually or on push, per
+# GitHub's docs. Copilot invokes the `copilot-setup-steps` job itself when a
+# review starts, regardless of these triggers.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-code-review.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or Copilot will not pick it up.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fetch latest query-doctor-log artifact for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          SHA="$(git rev-parse HEAD)"
+          echo "Looking up Query Doctor run for commit $SHA"
+
+          RUN_ID="$(gh api "repos/$REPO/actions/workflows/query-doctor.yml/runs?head_sha=$SHA&status=completed" \
+            --jq '.workflow_runs[0].id // empty')"
+
+          if [ -z "$RUN_ID" ]; then
+            echo "No completed Query Doctor run found for $SHA; skipping artifact fetch."
+            exit 0
+          fi
+          echo "Found Query Doctor run: $RUN_ID"
+
+          ARTIFACT_ID="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq '.artifacts[] | select(.name=="query-doctor-log" and .expired==false) | .id' | head -n1)"
+
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "No non-expired query-doctor-log artifact found for run $RUN_ID; skipping."
+            exit 0
+          fi
+          echo "Found artifact: $ARTIFACT_ID"
+
+          gh api "repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" > query-doctor-log.zip
+          unzip -o query-doctor-log.zip -d .
+          rm -f query-doctor-log.zip
+
+          echo "query_doctor.log is now present in the workspace for Copilot to read:"
+          cat query_doctor.log || echo "(file not found after unzip)"

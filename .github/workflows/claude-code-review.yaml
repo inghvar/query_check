@@ -1,0 +1,103 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: query_check
+          POSTGRES_PASSWORD: "0000"
+          POSTGRES_DB: query_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.CLOUD_SECRET }}
+          use_sticky_comment: true
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 30
+            --allowedTools "Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(cat:*)"
+          prompt: |
+            Review PR #$PR_NUMBER in ${{ github.repository }} (author: $PR_AUTHOR).
+
+            This repo uses django-query-doctor (test-only instrumentation) to
+            detect N+1 queries and other DB-query problems. It is NOT wired
+            into static analysis — the only way to get its findings is to
+            actually run the Django test suite, which writes them to
+            query_doctor.log at the repo root.
+
+            ## Step 1 — Gather the diff
+            ```
+            git fetch origin master --quiet
+            git log origin/master..HEAD --oneline
+            git diff origin/master...HEAD --stat
+            git diff origin/master...HEAD
+            ```
+
+            ## Step 2 — Run query-doctor for real
+            The Postgres service is already up (host 127.0.0.1:5432, db/user
+            "query_check", password "0000" — matches config/settings.py).
+            Run:
+            ```
+            python manage.py test
+            ```
+            This exercises the test suite and appends structured findings to
+            query_doctor.log (format: lines containing "N+1 detected",
+            "[WARNING]", or "[CRITICAL]" with a query count and the
+            serializer/view responsible). Read that file after the run:
+            ```
+            cat query_doctor.log
+            ```
+            If the file is empty or missing, say so explicitly in your review
+            — do not invent findings.
+
+            ## Step 3 — Cross-reference with the diff
+            For every finding in query_doctor.log that is caused by, or
+            directly relevant to, code touched in this PR's diff, write ONE
+            inline-style note citing the exact query_doctor.log line/finding
+            (query count, model/serializer name) plus the diff hunk it
+            relates to. Do not report findings unrelated to this PR's changes.
+
+            ## Step 4 — Post the review
+            Write your findings to /tmp/review.md with sections:
+            ### Query Doctor Findings
+            ### Verdict
+            Post it with: `gh pr comment $PR_NUMBER --body-file /tmp/review.md`
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          GH_TOKEN: ${{ github.token }}

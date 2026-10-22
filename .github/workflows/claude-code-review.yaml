@@ -92,17 +92,34 @@ jobs:
             (query count, model/serializer name) plus the diff hunk it
             relates to. Do not report findings unrelated to this PR's changes.
 
-            ## Step 4 — Propose a fix
-            For each finding from Step 3, propose a concrete code fix as a
-            diff/code snippet (e.g. the corrected queryset with
-            select_related/prefetch_related, or whatever change resolves the
-            N+1). Do NOT edit files or commit anything — only show the
-            suggested code in the review text.
+            ## Step 4 — Post an inline suggestion
+            For each finding from Step 3, post ONE inline PR review comment
+            on the exact line of the diff that causes it, using a GitHub
+            "suggestion" block so the author can click "Commit suggestion".
+            Do NOT edit files or commit anything yourself — only propose the
+            change via the suggestion block.
 
-            ## Step 5 — Post the review
-            Write your findings to /tmp/review.md with sections:
+            Get the head commit SHA and the file/line first:
+            ```
+            HEAD_SHA=$(gh pr view $PR_NUMBER --json headRefOid -q .headRefOid)
+            ```
+            Then for each finding, post an inline comment like this (replace
+            path/line/body with the real values — body must contain a
+            ```suggestion fenced block with the full corrected line(s)):
+            ```
+            gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/comments \
+              -f commit_id="$HEAD_SHA" \
+              -f path="articles/views.py" \
+              -F line=14 \
+              -f side="RIGHT" \
+              -f body=$'Restore select_related to avoid N+1 (query_doctor: 2 identical accounts_user queries).\n\n```suggestion\n    queryset = Article.objects.select_related(\'author\')\n```'
+            ```
+            Use the actual path/line for each real finding — do not hardcode
+            the example above.
+
+            ## Step 5 — Post a summary
+            Also write an overall summary to /tmp/review.md with sections:
             ### Query Doctor Findings
-            ### Suggested Fix
             ### Verdict
             Post it with: `gh pr comment $PR_NUMBER --body-file /tmp/review.md`
         env:

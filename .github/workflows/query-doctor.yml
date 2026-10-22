@@ -40,3 +40,11 @@ jobs:
       - name: Annotate query-doctor findings
         if: always()
         run: python scripts/query_doctor_annotate.py --fail-on warning
+
+      - name: Upload query-doctor log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: query-doctor-log
+          path: query_doctor.log
+          retention-days: 7

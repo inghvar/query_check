@@ -92,9 +92,17 @@ jobs:
             (query count, model/serializer name) plus the diff hunk it
             relates to. Do not report findings unrelated to this PR's changes.
 
-            ## Step 4 — Post the review
+            ## Step 4 — Propose a fix
+            For each finding from Step 3, propose a concrete code fix as a
+            diff/code snippet (e.g. the corrected queryset with
+            select_related/prefetch_related, or whatever change resolves the
+            N+1). Do NOT edit files or commit anything — only show the
+            suggested code in the review text.
+
+            ## Step 5 — Post the review
             Write your findings to /tmp/review.md with sections:
             ### Query Doctor Findings
+            ### Suggested Fix
             ### Verdict
             Post it with: `gh pr comment $PR_NUMBER --body-file /tmp/review.md`
         env:

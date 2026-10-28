@@ -11,6 +11,7 @@ from articles.filters import ArticleFilter
 
 
 class ArticleView(viewsets.ModelViewSet):
+    """CRUD endpoints for articles."""
     queryset = Article.objects.select_related('author')
     serializer_class = ArticleSerializer 
     permission_classes=[IsAuthenticated]

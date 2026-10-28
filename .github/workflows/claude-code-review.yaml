@@ -54,11 +54,10 @@ jobs:
           prompt: |
             Review PR #$PR_NUMBER in ${{ github.repository }} (author: $PR_AUTHOR).
 
-            This repo uses django-query-doctor (test-only instrumentation) to
-            detect N+1 queries and other DB-query problems. It is NOT wired
-            into static analysis — the only way to get its findings is to
-            actually run the Django test suite, which writes them to
-            query_doctor.log at the repo root.
+            This review has two mandatory, independent parts (Part A and
+            Part B below). Do both. Neither one replaces the other, and
+            Part B's presence or absence has no effect on whether you do
+            Part A.
 
             ## Step 1 — Gather the diff
             ```
@@ -67,8 +66,19 @@ jobs:
             git diff origin/master...HEAD --stat
             git diff origin/master...HEAD
             ```
+            This diff is the starting point for Part A, not its boundary:
+            read as much of the surrounding code as you need (full changed
+            files, callers, related modules) to judge correctness and
+            design. Do not limit Part A's observations to lines literally
+            added or removed in the diff.
 
             ## Step 2 — Run query-doctor for real
+            This repo uses django-query-doctor (test-only instrumentation) to
+            detect N+1 queries and other DB-query problems. It is NOT wired
+            into static analysis — the only way to get its findings is to
+            actually run the Django test suite, which writes them to
+            query_doctor.log at the repo root.
+
             The Postgres service is already up (host 127.0.0.1:5432, db/user
             "query_check", password "0000" — matches config/settings.py).
             Run:
@@ -82,22 +92,37 @@ jobs:
             ```
             cat query_doctor.log
             ```
-            If the file is empty or missing, say so explicitly in your review
-            — do not invent findings.
 
-            ## Step 3 — Cross-reference with the diff
-            For every finding in query_doctor.log that is caused by, or
-            directly relevant to, code touched in this PR's diff, write ONE
-            inline-style note citing the exact query_doctor.log line/finding
-            (query count, model/serializer name) plus the diff hunk it
-            relates to. Do not report findings unrelated to this PR's changes.
+            ## Part A — your own review (always required)
+            Based on Step 1, assess the PR independently of query-doctor:
+            correctness, bugs, test coverage, security, readability,
+            conventions. This is required on every PR, regardless of
+            whether query_doctor.log has any content.
 
-            ## Step 4 — Post an inline suggestion
-            For each finding from Step 3, post ONE inline PR review comment
-            on the exact line of the diff that causes it, using a GitHub
-            "suggestion" block so the author can click "Commit suggestion".
-            Do NOT edit files or commit anything yourself — only propose the
-            change via the suggestion block.
+            ## Part B — query-doctor findings (required only if the file is non-empty)
+            If query_doctor.log is missing or empty: skip Part B entirely.
+            Do not mention its absence anywhere in your review — this is not
+            a defect of the PR, just an outcome of this run. Proceed to
+            Step 4 with Part A only.
+
+            If query_doctor.log is non-empty: every finding in it is a
+            required review input, not optional context you may skim past.
+            For each finding:
+            1. Open the exact file/line query-doctor implicates.
+            2. Determine whether this PR's diff caused or is directly
+               relevant to that finding.
+            3. State explicitly, in your own words, whether you confirmed it
+               as a real problem after reading that code — do not just repeat
+               the query-doctor line back.
+            Do not report findings unrelated to this PR's changes.
+
+            ## Step 4 — Post an inline suggestion for each Part B finding
+            Skip this step entirely if Part B was skipped (empty/missing log).
+            For each confirmed finding from Part B, post ONE inline PR review
+            comment on the exact line of the diff that causes it, using a
+            GitHub "suggestion" block so the author can click "Commit
+            suggestion". Do NOT edit files or commit anything yourself — only
+            propose the change via the suggestion block.
 
             Get the head commit SHA and the file/line first:
             ```
@@ -118,9 +143,16 @@ jobs:
             the example above.
 
             ## Step 5 — Post a summary
-            Also write an overall summary to /tmp/review.md with sections:
+            Write an overall summary to /tmp/review.md with these sections,
+            in this order:
+            ### Overview
+            (Part A findings — always present)
             ### Query Doctor Findings
+            (Part B findings, one bullet per confirmed finding with your
+            determination from Part B step 3. Omit this whole section,
+            heading included, if Part B was skipped.)
             ### Verdict
+            (Must factor in both Part A and any confirmed Part B findings.)
             Post it with: `gh pr comment $PR_NUMBER --body-file /tmp/review.md`
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}

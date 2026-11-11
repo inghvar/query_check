@@ -50,7 +50,6 @@ jobs:
           claude_args: |
             --model claude-sonnet-4-6
             --max-turns 30
-            --allowedTools "Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(cat:*)"
           prompt: |
             Review PR #$PR_NUMBER in ${{ github.repository }} (author: $PR_AUTHOR).
 

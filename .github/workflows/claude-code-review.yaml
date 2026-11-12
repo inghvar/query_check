@@ -1,160 +1,112 @@
 name: Claude Code Review
 
+# Runs after the "Query Doctor" workflow finishes on a PR, so the
+# query_doctor.log it produced during the test suite is available as an
+# artifact for this review to read.
 on:
-  pull_request:
-    types: [opened, ready_for_review]
+  workflow_run:
+    workflows: ["Query Doctor"]
+    types: [completed]
 
 jobs:
-  review:
+  claude-review:
+    # Runs whether the triggering workflow passed or failed; only an actual
+    # cancellation skips it. head_repository check: this privileged job
+    # checks out the PR's head ref, so it must only run for PRs whose head
+    # branch lives in this repository (never a fork).
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      !endsWith(github.event.workflow_run.actor.login, '[bot]')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
       issues: write
-      actions: read
       id-token: write
-
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: query_check
-          POSTGRES_PASSWORD: "0000"
-          POSTGRES_DB: query_check
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+      actions: read
     steps:
+      - name: Resolve PR number and head SHA
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              core.setFailed("No associated pull request found on this workflow_run event.");
+              return;
+            }
+            core.setOutput('number', prs[0].number);
+            core.setOutput('head_sha', prs[0].head.sha);
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - name: Download query-doctor log
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          python-version: "3.12"
+          name: query-doctor-log
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
+      # Claude only reads query_doctor.log and the code, and returns its
+      # findings as structured JSON (--json-schema below). It does not run
+      # `gh` itself — posting the comment is a separate, plain bash step
+      # further down.
       - uses: anthropics/claude-code-action@v1
+        id: review
         with:
           anthropic_api_key: ${{ secrets.CLOUD_SECRET }}
-          use_sticky_comment: true
           claude_args: |
-            --model claude-sonnet-4-6
-            --max-turns 30
-            --allowedTools "Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(cat:*)"
+            --model claude-haiku-4-5-20251001
+            --allowedTools "Read,Grep,Glob,Bash(git:*),Bash(cat:*),Bash(test:*)"
+            --json-schema '{"type":"object","properties":{"has_findings":{"type":"boolean","description":"true only if query_doctor.log exists, is non-empty, and contains at least one finding relevant to this PR"},"report":{"type":"string","description":"Markdown report, one entry per confirmed finding: file:line, the query/model involved, why it happens, and a concrete fix (or, if no acceptable fix was found, just the problem). Empty string if has_findings is false."}},"required":["has_findings","report"]}'
+          show_full_output: true
           prompt: |
-            Review PR #$PR_NUMBER in ${{ github.repository }} (author: $PR_AUTHOR).
-
-            This review has two mandatory, independent parts (Part A and
-            Part B below). Do both. Neither one replaces the other, and
-            Part B's presence or absence has no effect on whether you do
-            Part A.
-
-            ## Step 1 — Gather the diff
+            Open the file query_doctor.log at the repo root (downloaded as
+            a build artifact into this checkout by the test workflow that
+            ran just before this review) and check what findings
+            query-doctor has left there:
             ```
-            git fetch origin master --quiet
-            git log origin/master..HEAD --oneline
-            git diff origin/master...HEAD --stat
-            git diff origin/master...HEAD
-            ```
-            This diff is the starting point for Part A, not its boundary:
-            read as much of the surrounding code as you need (full changed
-            files, callers, related modules) to judge correctness and
-            design. Do not limit Part A's observations to lines literally
-            added or removed in the diff.
-
-            ## Step 2 — Run query-doctor for real
-            This repo uses django-query-doctor (test-only instrumentation) to
-            detect N+1 queries and other DB-query problems. It is NOT wired
-            into static analysis — the only way to get its findings is to
-            actually run the Django test suite, which writes them to
-            query_doctor.log at the repo root.
-
-            The Postgres service is already up (host 127.0.0.1:5432, db/user
-            "query_check", password "0000" — matches config/settings.py).
-            Run:
-            ```
-            python manage.py test
-            ```
-            This exercises the test suite and appends structured findings to
-            query_doctor.log (format: lines containing "N+1 detected",
-            "[WARNING]", or "[CRITICAL]" with a query count and the
-            serializer/view responsible). Read that file after the run:
-            ```
-            cat query_doctor.log
+            test -s query_doctor.log && cat query_doctor.log || echo "no findings"
             ```
 
-            ## Part A — your own review (always required)
-            Based on Step 1, assess the PR independently of query-doctor:
-            correctness, bugs, test coverage, security, readability,
-            conventions. This is required on every PR, regardless of
-            whether query_doctor.log has any content.
+            If there are no findings, or the file does not exist or is
+            empty: set has_findings to false and report to an empty string.
+            Do not invent findings.
 
-            ## Part B — query-doctor findings (required only if the file is non-empty)
-            If query_doctor.log is missing or empty: skip Part B entirely.
-            Do not mention its absence anywhere in your review — this is not
-            a defect of the PR, just an outcome of this run. Proceed to
-            Step 4 with Part A only.
+            If there are findings: for each one, check whether it's caused
+            by or directly relevant to this PR's diff (`git diff
+            origin/master...HEAD`) — ignore findings unrelated to this PR's
+            changes. For each relevant finding, open the exact file/line it
+            implicates and read the surrounding code to confirm it's a real
+            problem, not a false positive.
 
-            If query_doctor.log is non-empty: every finding in it is a
-            required review input, not optional context you may skim past.
-            For each finding:
-            1. Open the exact file/line query-doctor implicates.
-            2. Determine whether this PR's diff caused or is directly
-               relevant to that finding.
-            3. State explicitly, in your own words, whether you confirmed it
-               as a real problem after reading that code — do not just repeat
-               the query-doctor line back.
-            Do not report findings unrelated to this PR's changes.
+            For each confirmed finding, study the code and propose a fix. If
+            you cannot find an acceptable fix, do not propose one — only
+            point out the problem query-doctor detected.
 
-            ## Step 4 — Post an inline suggestion for each Part B finding
-            Skip this step entirely if Part B was skipped (empty/missing log).
-            For each confirmed finding from Part B, post ONE inline PR review
-            comment on the exact line of the diff that causes it, using a
-            GitHub "suggestion" block so the author can click "Commit
-            suggestion". Do NOT edit files or commit anything yourself — only
-            propose the change via the suggestion block.
+            Set has_findings to true only if at least one finding was
+            confirmed as real. Put the findings (and fixes, where found) in
+            report as markdown: file:line, the query/model involved, why it
+            happens, and the fix (or just the problem if no fix was found).
+            Do not add any other sections (no summary, test coverage,
+            security, best-practices, or verdict) — only the confirmed
+            findings.
 
-            Get the head commit SHA and the file/line first:
-            ```
-            HEAD_SHA=$(gh pr view $PR_NUMBER --json headRefOid -q .headRefOid)
-            ```
-            Then for each finding, post an inline comment like this (replace
-            path/line/body with the real values — body must contain a
-            ```suggestion fenced block with the full corrected line(s)):
-            ```
-            gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/comments \
-              -f commit_id="$HEAD_SHA" \
-              -f path="articles/views.py" \
-              -F line=14 \
-              -f side="RIGHT" \
-              -f body=$'Restore select_related to avoid N+1 (query_doctor: 2 identical accounts_user queries).\n\n```suggestion\n    queryset = Article.objects.select_related(\'author\')\n```'
-            ```
-            Use the actual path/line for each real finding — do not hardcode
-            the example above.
-
-            ## Step 5 — Post a summary
-            Write an overall summary to /tmp/review.md with these sections,
-            in this order:
-            ### Overview
-            (Part A findings — always present)
-            ### Query Doctor Findings
-            (Part B findings, one bullet per confirmed finding with your
-            determination from Part B step 3. Omit this whole section,
-            heading included, if Part B was skipped.)
-            ### Verdict
-            (Must factor in both Part A and any confirmed Part B findings.)
-            Post it with: `gh pr comment $PR_NUMBER --body-file /tmp/review.md`
+      # Deterministic, non-AI step: posts the comment itself whenever Claude
+      # reported at least one confirmed finding.
+      - name: Post query-doctor findings as a PR comment
+        if: fromJSON(steps.review.outputs.structured_output).has_findings == true
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPORT: ${{ fromJSON(steps.review.outputs.structured_output).report }}
+        run: |
+          printf '%s' "$REPORT" > /tmp/review.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review.md

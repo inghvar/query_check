@@ -80,10 +80,16 @@ jobs:
             empty: set has_findings to false and report to an empty string.
             Do not invent findings.
 
-            If there are findings: for each one, check whether it's caused
-            by or directly relevant to this PR's diff (`git diff
-            origin/master...HEAD`) — ignore findings unrelated to this PR's
-            changes. For each relevant finding, open the exact file/line it
+            If there are findings: first get the list of files changed by
+            this PR:
+            ```
+            git diff --name-only origin/master...HEAD
+            ```
+            A finding is relevant only if the file in its file:line is in
+            that list, or the N+1 is caused by code changed in this PR's
+            diff (`git diff origin/master...HEAD`). Discard every other
+            finding — do not include it even if it is a real problem. For
+            each relevant finding, open the exact file/line it
             implicates and read the surrounding code to confirm it's a real
             problem, not a false positive.
 

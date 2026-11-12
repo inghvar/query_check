@@ -43,6 +43,15 @@ class ArticleViewSetTest(APITestCase):
         response = new_client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
+    def test_get_articles_many(self):
+        for i in range(6):
+            Article.objects.create(
+                **{**self.article_create_data, 'slug': f'many-slug-{i}'}
+            )
+
+        response = self.client.get('/api/articles')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_get_article_feed(self):
         url = '/api/articles/feed'
 

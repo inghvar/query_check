@@ -11,7 +11,7 @@ from articles.filters import ArticleFilter
 
 
 class ArticleView(viewsets.ModelViewSet):
-    queryset = Article.objects.select_related('author')
+    queryset = Article.objects.all()
     serializer_class = ArticleSerializer 
     permission_classes=[IsAuthenticated]
     lookup_field='slug'

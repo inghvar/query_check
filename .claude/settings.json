@@ -16,5 +16,16 @@
       "Glob(*)",
       "Grep(*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "dgtlpower": {
+      "source": {
+        "source": "github",
+        "repo": "DGTLPower/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "django@dgtlpower": true
   }
 }
